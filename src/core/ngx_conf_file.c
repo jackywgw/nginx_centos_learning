@@ -216,7 +216,8 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
         }
 
         /* rc == NGX_OK || rc == NGX_CONF_BLOCK_START */
-
+        /*指令解析有两种方式，其一是使用nginx内建的指令解析机制，其二是使用第三方自定义指令解析机制。*/
+        /*1. 使用第三方自定义指令解析机制*/
         if (cf->handler) {
             ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0,"cf->handler is not null");
             /*
@@ -243,7 +244,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
             goto failed;
         }
 
-
+        /*2. 使用nginx内建的指令解析机制*/
         rc = ngx_conf_handler(cf, rc);
 
         if (rc == NGX_ERROR) {
@@ -299,18 +300,21 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
         if (cmd == NULL) {
             continue;
         }
-
+        /*循环command数组，查找匹配命令关键字*/
         for ( /* void */ ; cmd->name.len; cmd++) {
-
+            /*名字长度不一样，直接跳过*/
             if (name->len != cmd->name.len) {
                 continue;
             }
-
+            /*名字长度一样，但是命令不匹配，跳过该命令*/
             if (ngx_strcmp(name->data, cmd->name.data) != 0) {
                 continue;
             }
-
-            found = 1;//找到匹配的关键字
+            /*找到了匹配的关键字，设置found为1*/
+            found = 1;
+            /*只有处理的模块的类型是NGX_CONF_MODULE或者是当前正在处理的模块类型，才可能被执行。
+             * nginx中有一种模块类型是NGX_CONF_MODULE，当前只有ngx_conf_module一种，只支持一条指令“include”。
+             * “include”指令的实现我们后面再进行介绍。*/
             /*确保不同模块的相同名字的命令不会被解析*/
             if (ngx_modules[i]->type != NGX_CONF_MODULE
                 && ngx_modules[i]->type != cf->module_type)
@@ -322,17 +326,18 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             /*default type is zeros now*/
             ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0,"cmd->type=0x%xi,cf->cmd_type=0x%xi",cmd->type,cf->cmd_type);
             //ngx_log_stderr(0,"cmd->type=0x%xi,cf->cmd_type=0x%xi",(unsigned int)cmd->type,(unsigned int)cf->cmd_type);
+            /*指令的Context类型必须当前解析Context类型相符*/
             if (!(cmd->type & cf->cmd_type)) {
                 continue;
             }
-
+            /*非块指令必须以";"结尾*/
             if (!(cmd->type & NGX_CONF_BLOCK) && last != NGX_OK) {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                   "directive \"%s\" is not terminated by \";\"",
                                   name->data);
                 return NGX_ERROR;
             }
-
+            /*块指令必须后接"{"*/
             if ((cmd->type & NGX_CONF_BLOCK) && last != NGX_CONF_BLOCK_START) {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                    "directive \"%s\" has no opening \"{\"",
@@ -341,7 +346,7 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             }
 
             /* is the directive's argument count right ? */
-
+            /*指令参数个数必须正确。注意指令参数有最大值NGX_CONF_MAX_ARGS，目前值为8*/
             if (!(cmd->type & NGX_CONF_ANY)) {
 
                 if (cmd->type & NGX_CONF_FLAG) {
@@ -373,19 +378,36 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             }
 
             /* set up the directive's configuration context */
-
+            /*获取指令工作的conf指针*/
             conf = NULL;
             ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "ngx_modules[%d]->index=%d,NGX_DIRECT_CONF=0x%xi,NGX_MAIN_CONF=0x%xi",i,ngx_modules[i]->index,NGX_DIRECT_CONF,NGX_MAIN_CONF);
+            /*NGX_DIRECT_CONF常量单纯用来指定配置存储区的寻址方法，只用于core模块*/
             if (cmd->type & NGX_DIRECT_CONF) {
                 ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0,"NGX_DIRECT_CONF");
                 conf = ((void **) cf->ctx)[ngx_modules[i]->index];
 
             } else if (cmd->type & NGX_MAIN_CONF) {
+                /*NGX_MAIN_CONF常量有两重含义，
+                 * 其一是指定指令的使用上下文是main（其实还是指core模块），
+                 * 所以，在代码中常常可以见到使用上下文是main的指令的cmd->type属性定义如下：
+                 * NGX_MAIN_CONF|NGX_DIRECT_CONF|...
+                 * 表示指令使用上下文是main，conf寻址方式是直接寻址。
+                 * 其二是指定配置存储区的寻址方法。
+                 * 使用NGX_MAIN_CONF还表示指定配置存储区的寻址方法的指令有4个：“events”、“http”、“mail”、“imap”。
+                 * 这四个指令也有共同之处——都是使用上下文是main的块指令，
+                 * 并且块中的指令都使用其他类型的模块（分别是event模块、http模块、mail模块和mail模块）来处理。
+                 *
+                 * NGX_MAIN_CONF|NGX_CONF_BLOCK|...
+                 * 后面分析ngx_http_block()函数时，再具体分析为什么需要NGX_MAIN_CONF这种配置寻址方式。*/
                 ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0,"NGX_MAIN_CONF");
                 conf = &(((void **) cf->ctx)[ngx_modules[i]->index]);
 
             } else if (cf->ctx) {
                 ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0,"cf->ctx is not null");
+                /*除开core模块，其他类型的模块都会使用第三种配置寻址方式，也就是根据cmd->conf的值从cf->ctx中取出对应的配置。
+                 * 举http模块为例，cf->conf的可选值是
+                 * NGX_HTTP_MAIN_CONF_OFFSET、NGX_HTTP_SRV_CONF_OFFSET、NGX_HTTP_LOC_CONF_OFFSET，
+                 * 分别对应“http{}”、“server{}”、“location{}”这三个http配置级别。*/
                 /*conf is the offset of the cmd, values are:
                  * NGX_HTTP_MAIN_CONF_OFFSET
                  * NGX_HTTP_SRV_CONF_OFFSET
@@ -393,14 +415,15 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                 *cf->ctx = conf->ctx = cycle->conf_ctx, ****conf_ctx*
                 *confp is where stores specific configure pointer array*
                 *use epoll 和worker_connectinos 都是使用的这种方式*/
+                /*此处的cf->ctx一般来说会被第二种配置解析是重新分配，如在函数ngx_events_block中就会把这个ctx值重新赋值*/
                 confp = *(void **) ((char *) cf->ctx + cmd->conf);
 
                 if (confp) {
                     /**/
-                    conf = confp[ngx_modules[i]->ctx_index];
+                    conf = confp[ngx_modules[i]->ctx_index];/*这里的这个值是在event，http，mail，imap中重新分配的*/
                 }
             }
-
+            /*调用command set回调函数执行配置赋值*/
             rv = cmd->set(cf, cmd, conf);
 
             if (rv == NGX_CONF_OK) {
@@ -495,7 +518,7 @@ ngx_conf_read_token(ngx_conf_t *cf)
 
                 return NGX_CONF_FILE_DONE;
             }
-            /*这个两个值一般情况下应该相等，因为前面刚刚把b->pos赋值给了start*/
+            /*这个两个值在重新执行for循环的情况下应该相等，因为前面刚刚把b->pos赋值给了start*/
             len = b->pos - start;
             /*如果这个长度超过了最大文件buffer,NGX_CONF_BUFFER，出错返回*/
             if (len == NGX_CONF_BUFFER) {

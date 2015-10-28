@@ -569,7 +569,7 @@ ngx_create_paths(ngx_cycle_t *cycle, ngx_uid_t user)
 
     path = cycle->paths.elts;
     for (i = 0; i < cycle->paths.nelts; i++) {
-
+        ngx_log_stderr(0,"path[%d]->name.data=%s",i,path[i]->name.data);
         if (ngx_create_dir(path[i]->name.data, 0700) == NGX_FILE_ERROR) {
             err = ngx_errno;
             if (err != NGX_EEXIST) {

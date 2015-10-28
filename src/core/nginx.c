@@ -336,12 +336,19 @@ main(int argc, char *const *argv)
     if (ngx_add_inherited_sockets(&init_cycle) != NGX_OK) {
         return 1;
     }
-
+    /*统计模块总数，并且记录模块索引*/
     ngx_max_module = 0;
     for (i = 0; ngx_modules[i]; i++) {
         ngx_modules[i]->index = ngx_max_module++;
     }
-
+    /*cycl是周期的意思，对应着一次启动过程，每次启动，nginx都会创建一个新的cycle与这次启动对应
+     * 初始化cycle,入参init_cycle为老的cycle，主要存储了log和配置文件相关的信息，还有main函数入参信息
+     * ngx_init_cycle函数的主要作用：
+     * 1. 解析nginx配置文件
+     * 2. 初始化core模块
+     * 3. 初始化文件句柄
+     * 4. 初始化共享内存
+     * 5. 监听端口*/
     cycle = ngx_init_cycle(&init_cycle);
     if (cycle == NULL) {
         if (ngx_test_config) {

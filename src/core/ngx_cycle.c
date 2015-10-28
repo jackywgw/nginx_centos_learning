@@ -215,7 +215,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     ngx_strlow(cycle->hostname.data, (u_char *) hostname, cycle->hostname.len);
     ngx_log_error(NGX_LOG_DEBUG,log,0,"hostname=%s",hostname);
-
+    /*初始化core模块的配置创建函数,并将配置指针放入到配置上下文conf_ctx中*/
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->type != NGX_CORE_MODULE) {
             continue;
@@ -230,7 +230,10 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
                 return NULL;
             }
             /*ngx_modules[i]->index had been set before function ngx_int_cycle
-             * only index 0,6,7 will be excute here*/
+             * only index 0,6,7 will be excute here
+             * 0---ngx_core_conf_t
+             * 6---ngx_openssl_conf_t
+             * 7---ngx_regex_conf_t*/
             ngx_log_error(NGX_LOG_DEBUG,log,0,"ngx_modules[%d]->index=%zu",i,ngx_modules[i]->index);
             cycle->conf_ctx[ngx_modules[i]->index] = rv;
         }
@@ -239,7 +242,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     senv = environ;
 
-
+    /*初始化conf结构*/
     ngx_memzero(&conf, sizeof(ngx_conf_t));
     /* STUB: init array ? */
     conf.args = ngx_array_create(pool, 10, sizeof(ngx_str_t));
@@ -284,7 +287,8 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         ngx_log_stderr(0, "the configuration file %s syntax is ok",
                        cycle->conf_file.data);
     }
-
+    /*当配置文件解析完毕后，就初始化core module的Config,
+     * 如果在配置文件中有配置，则不在初始化，只初始化配置文件中没有配置的项*/
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->type != NGX_CORE_MODULE) {
             continue;
