@@ -103,7 +103,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
 
     sigemptyset(&set);
     
-    ngx_log_stderr(0,"%s,%d,log_level=0x%x",__FUNCTION__,__LINE__,cycle->log->log_level);
+    ngx_log_stderr(0,"%s,%d,log_level=0x%ix",__FUNCTION__,__LINE__,cycle->log->log_level);
 
     size = sizeof(master_process);
     ngx_log_stderr(0,"ngx_argc = %d",ngx_argc);
@@ -123,7 +123,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
         *p++ = ' ';
         p = ngx_cpystrn(p, (u_char *) ngx_argv[i], size);
     }
-
+    /*title 值设置为master process ./nginx*/
     ngx_setproctitle(title);
 
     //master进程获取core模块配置，ccf中有要创建多少个worker的设定
@@ -161,7 +161,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
         }
 
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0, "sigsuspend");
-
+        /*set信号集上面已经清空，所以这里是阻塞进程等待任何信号，只要有信号就唤醒进程*/
         sigsuspend(&set);
 
         ngx_time_update();
@@ -356,14 +356,14 @@ ngx_start_worker_processes(ngx_cycle_t *cycle, ngx_int_t n, ngx_int_t type)
     ch.command = NGX_CMD_OPEN_CHANNEL;
 
     for (i = 0; i < n; i++) {
-
+        /*type 为NGX_PROCESS_RESPAWN*/
         ngx_spawn_process(cycle, ngx_worker_process_cycle,
                           (void *) (intptr_t) i, "worker process", type);
 
         ch.pid = ngx_processes[ngx_process_slot].pid;
         ch.slot = ngx_process_slot;
         ch.fd = ngx_processes[ngx_process_slot].channel[0];
-
+        /*向其它worker进程广播当前创建的worker进程信息*/
         ngx_pass_open_channel(cycle, &ch);
     }
 }

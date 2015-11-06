@@ -95,6 +95,7 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
         s = respawn;
 
     } else {
+        /*查询进程id存储的数组位置*/
         for (s = 0; s < ngx_last_process; s++) {
             if (ngx_processes[s].pid == -1) {
                 break;
@@ -113,7 +114,15 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
     if (respawn != NGX_PROCESS_DETACHED) {
 
         /* Solaris 9 still has no AF_LOCAL */
-
+        /*int socketpair(int d, int type, int protocol, int sv[2]);
+         * 参数介绍：
+         * socketpair()函数建立一对匿名的已经连接的套接字，其特性由协议族d、类型type、协议protocol决定，
+         * 建立的两个套接字描述符会放在sv[0]和sv[1]中。
+         * 第1个参数d，表示协议族，只能为AF_LOCAL或者AF_UNIX；
+         * 第2个参数type，表示类型，只能为0。
+         * 第3个参数protocol，表示协议，可以是SOCK_STREAM或者SOCK_DGRAM。
+         * 用SOCK_STREAM建立的套接字对是管道流，与一般的管道相区别的是，
+         * 套接字对建立的通道是双向的，即每一端都可以进行读写。参数sv，用于保存建立的套接字对。*/
         if (socketpair(AF_UNIX, SOCK_STREAM, 0, ngx_processes[s].channel) == -1)
         {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
@@ -125,7 +134,7 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
                        "channel %d:%d",
                        ngx_processes[s].channel[0],
                        ngx_processes[s].channel[1]);
-
+        /*设置创建的套接字为非阻塞套接字*/
         if (ngx_nonblocking(ngx_processes[s].channel[0]) == -1) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                           ngx_nonblocking_n " failed while spawning \"%s\"",
@@ -141,7 +150,11 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
             ngx_close_channel(ngx_processes[s].channel, cycle->log);
             return NGX_INVALID_PID;
         }
-
+        /*设置套接字 异步输入/输出标志 
+         * FIOASYNC ：
+         * 根据iocl 的第三个参数指向一个0 值或非0 值分别清除或设置针对本套接口的信号驱动异步I/O 标志，
+         * 它决定是否收取针对本套接口的异步I/O 信号（SIGIO ）,
+         * 此处说明针对该套接字接口接收异步I/O信号*/
         on = 1;
         if (ioctl(ngx_processes[s].channel[0], FIOASYNC, &on) == -1) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
@@ -149,14 +162,19 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
             ngx_close_channel(ngx_processes[s].channel, cycle->log);
             return NGX_INVALID_PID;
         }
-
+        /* int fcntl(int fd, int cmd, long arg);
+         * 设置将接收SIGIO和SIGURG信号的进程id或进程组id，
+         * 进程组id通过提供负值的arg来说明(arg绝对值的一个进程组ID)，否则arg将被认为是进程id*/
         if (fcntl(ngx_processes[s].channel[0], F_SETOWN, ngx_pid) == -1) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                           "fcntl(F_SETOWN) failed while spawning \"%s\"", name);
             ngx_close_channel(ngx_processes[s].channel, cycle->log);
             return NGX_INVALID_PID;
         }
-
+        /*通过fcntl设置FD_CLOEXEC标志有什么用？
+         * close on exec, not on-fork, 
+         * 意为如果对描述符设置了FD_CLOEXEC，使用execl执行的程序里，此描述符被关闭，不能再使用它，
+         * 但是在使用fork调用的子进程中，此描述符并不关闭，仍可使用。*/
         if (fcntl(ngx_processes[s].channel[0], F_SETFD, FD_CLOEXEC) == -1) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                           "fcntl(FD_CLOEXEC) failed while spawning \"%s\"",
@@ -179,7 +197,7 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
         ngx_processes[s].channel[0] = -1;
         ngx_processes[s].channel[1] = -1;
     }
-
+    /*记录子进程存放在数组的slot号，即数组索引号*/
     ngx_process_slot = s;
 
 
@@ -195,27 +213,28 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
 
     case 0:
         ngx_pid = ngx_getpid();
-        proc(cycle, data);
+        proc(cycle, data);/*proc为子进程处理函数,如ngx_worker_process_cycle*/
         break;
 
     default:
         break;
     }
-
+    /*父子进程都会往下走，但是一般情况下，父进程master进程先往下走，子进程worker进程会执行proc，并循环停留在proc函数中*/
+    /*父进程返回的pid为子进程的id*/
     ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "start %s %P", name, pid);
-
+    /*记录子进程的id*/
     ngx_processes[s].pid = pid;
     ngx_processes[s].exited = 0;
 
     if (respawn >= 0) {
         return pid;
     }
-
+    /*记录子进程的处理函数，名称和data*/
     ngx_processes[s].proc = proc;
     ngx_processes[s].data = data;
     ngx_processes[s].name = name;
     ngx_processes[s].exiting = 0;
-
+    /*设置respawn，just_spaw和detached的标记*/
     switch (respawn) {
 
     case NGX_PROCESS_NORESPAWN:
@@ -248,11 +267,11 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
         ngx_processes[s].detached = 1;
         break;
     }
-
+    /*worker进程数加1*/
     if (s == ngx_last_process) {
         ngx_last_process++;
     }
-
+    /*返回子进程worker进程ID*/
     return pid;
 }
 

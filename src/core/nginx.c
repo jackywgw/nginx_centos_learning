@@ -378,6 +378,7 @@ main(int argc, char *const *argv)
 
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
     ngx_log_error(NGX_LOG_DEBUG,log,0,"master=%z",ccf->master);
+    /*ccf->master值在core模块conf init函数中已经初始化为1*/
     if (ccf->master && ngx_process == NGX_PROCESS_SINGLE) {
         ngx_process = NGX_PROCESS_MASTER;
     }
@@ -401,11 +402,15 @@ main(int argc, char *const *argv)
     }
 
 #endif
-
+    /*如果配置文件nginx.conf里面没有配置 pid  logs/nginx.pid;
+     * 则在core模块初始化配置ngx_core_module_init_conf时设置ccf->pid为默认路径
+     * "/usr/local/nginx/nginx.pid"*/
     if (ngx_create_pidfile(&ccf->pid, cycle->log) != NGX_OK) {
         return 1;
     }
-    /*将标准错误复制为log 文件句柄*/
+    /*将标准错误复制为log 文件句柄,
+     * 即后续往标准错误里面写入的东西，都会体现在log文件句柄中
+     * fd = ngx_log_get_file_log(cycle->log)->file->fd*/
     if (ngx_log_redirect_stderr(cycle) != NGX_OK) {
         return 1;
     }
