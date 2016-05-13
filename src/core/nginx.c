@@ -205,19 +205,23 @@ main(int argc, char *const *argv)
     ngx_log_t        *log;
     ngx_cycle_t      *cycle, init_cycle;
     ngx_core_conf_t  *ccf;
-
+    /* 在linux为空函数 ,
+     * src/os/unix/ngx_linux_config.h
+     * #define ngx_debug_init()
+     **/
     ngx_debug_init();
-
+    /*将linux系统标准的errno信息strerror字符串存储成一个数组链,数组总的大小由宏NGX_SYS_NERR控制*/
     if (ngx_strerror_init() != NGX_OK) {
         return 1;
     }
-
+    /*对选项参数的解析，此处并没有像一般的linux程序一样调用getopt/getopt_long,
+     * 而是通过对选项的字符识别来解析参数,可以解决不同平台兼容问题，如使用windows and linux*/    
     if (ngx_get_options(argc, argv) != NGX_OK) {
         return 1;
     }
-
+    /*根据入参选项，来判断是否输出nginx版本，nginx帮助信息，nginx配置信息等等*/
     if (ngx_show_version) {
-        ngx_write_stderr("nginx version: " NGINX_VER_BUILD NGX_LINEFEED);
+        ngx_write_stderr("nginx version: " NGINX_VER_BUILD NGX_LINEFEED);/*nginx_write_stderr将信心输出到标准错误文件句柄，直接显示在终端*/
 
         if (ngx_show_help) {
             ngx_write_stderr(
@@ -281,15 +285,15 @@ main(int argc, char *const *argv)
 
     /* TODO */ ngx_max_sockets = -1;
 
-    ngx_time_init();
-
+    ngx_time_init();/*时间初始化*/
+/*如果有PCRE库，则进行正则表达式初始化*/
 #if (NGX_PCRE)
     ngx_regex_init();
 #endif
 
-    ngx_pid = ngx_getpid();
-
-    log = ngx_log_init(ngx_prefix);
+    ngx_pid = ngx_getpid();/*获取当前进程id,放入全局变量ngx_pid中*/
+    /*将ngx_log.c里面的静态变量ngx_log的地址返回给局部log变量*/
+    log = ngx_log_init(ngx_prefix);/*初始化日志文件*/
     if (log == NULL) {
         return 1;
     }

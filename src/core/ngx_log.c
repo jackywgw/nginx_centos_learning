@@ -319,11 +319,11 @@ ngx_log_init(u_char *prefix)
 {
     u_char  *p, *name;
     size_t   nlen, plen;
-
+    /*ngx_log为src/core/ngx_log.c文件中的静态变量*/
     ngx_log.file = &ngx_log_file;
     ngx_log.log_level = NGX_LOG_DEBUG;
 
-    name = (u_char *) NGX_ERROR_LOG_PATH;
+    name = (u_char *) NGX_ERROR_LOG_PATH;/*由configure选项设置 --error-log-path=*)   NGX_ERROR_LOG_PATH="$value";;*/
 
     /*
      * we use ngx_strlen() here since BCC warns about
@@ -331,14 +331,14 @@ ngx_log_init(u_char *prefix)
      */
 
     nlen = ngx_strlen(name);
-
+    /*如果没有设置，则直接返回标准错误输出*/
     if (nlen == 0) {
         ngx_log_file.fd = ngx_stderr;
         return &ngx_log;
     }
 
     p = NULL;
-
+/*如果log路径不是绝对路径，并且有前缀prefix，则在错误文件前面加上前缀，组成完整的log文件路径*/
 #if (NGX_WIN32)
     if (name[1] != ':') {
 #else
@@ -374,11 +374,11 @@ ngx_log_init(u_char *prefix)
             p = name;
         }
     }
-
+    /*打开log文件，并存入src/core/ngx_log.c 里面的静态变量ngx_log_file结构的文件句柄中*/
     ngx_log_file.fd = ngx_open_file(name, NGX_FILE_APPEND,
                                     NGX_FILE_CREATE_OR_OPEN,
                                     NGX_FILE_DEFAULT_ACCESS);
-
+    /*如果文件句柄打开失败，则将句柄设置为标准错误*/
     if (ngx_log_file.fd == NGX_INVALID_FILE) {
         ngx_log_stderr(ngx_errno,
                        "[alert] could not open error log file: "
@@ -388,14 +388,14 @@ ngx_log_init(u_char *prefix)
                        "could not open error log file: "
                        ngx_open_file_n " \"%s\" failed", name);
 #endif
-
+     
         ngx_log_file.fd = ngx_stderr;
     }
 
     if (p) {
         ngx_free(p);
     }
-
+    /*返回静态变量ngx_log的地址*/
     return &ngx_log;
 }
 
