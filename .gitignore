@@ -1,2 +1,5 @@
 *.[oa]
 objs/
+cscope.*
+tags
+Makefile
