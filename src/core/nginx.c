@@ -307,24 +307,26 @@ main(int argc, char *const *argv)
      * init_cycle->log is required for signal handlers and
      * ngx_process_options()
      */
-
+    /*初始化ngx_cycle_t结构变量init_cycle*/
     ngx_memzero(&init_cycle, sizeof(ngx_cycle_t));
-    init_cycle.log = log;
-    ngx_cycle = &init_cycle;
-
+    init_cycle.log = log;/*将log指针赋值给init_cycle结构中的log*/
+    ngx_cycle = &init_cycle;/*ngx_cycle指针指向init_cycle的地址*/
+    /*创建内存地址池::::TODO,后面详细学习分析*/
     init_cycle.pool = ngx_create_pool(1024, log);
     if (init_cycle.pool == NULL) {
         return 1;
     }
-
+    /*将命令参数和环境变量保存到ngx_os_argv,ngx_argc,ngx_argv和ngx_os_environ中，
+     * 这个是一个备份存储，方便后面的初始化工作能够随时获取命令行参数*/
     if (ngx_save_argv(&init_cycle, argc, argv) != NGX_OK) {
         return 1;
     }
-
+    /*nginx前缀，配置文件前缀和配置文件路径等写入init_cycle结构*/
     if (ngx_process_options(&init_cycle) != NGX_OK) {
         return 1;
     }
-
+    /*完成操作系统的一些信息获取，比如内存页面大小、系统限制资源等信息；
+     * 所有这些资源都保存到对应的全局变量中，以便后续访问*/
     if (ngx_os_init(log) != NGX_OK) {
         return 1;
     }
@@ -332,11 +334,11 @@ main(int argc, char *const *argv)
     /*
      * ngx_crc32_table_init() requires ngx_cacheline_size set in ngx_os_init()
      */
-
+    /*初始化CRC表,以便后续CRC校验通过查表进行，效率高*/
     if (ngx_crc32_table_init() != NGX_OK) {
         return 1;
     }
-
+    /*解析环境变量NGINX_VAR="NGINX"中的sockets，并保存至ngx_cycle.listening数组中*/
     if (ngx_add_inherited_sockets(&init_cycle) != NGX_OK) {
         return 1;
     }
@@ -345,7 +347,7 @@ main(int argc, char *const *argv)
     for (i = 0; ngx_modules[i]; i++) {
         ngx_modules[i]->index = ngx_max_module++;
     }
-    /*cycl是周期的意思，对应着一次启动过程，每次启动，nginx都会创建一个新的cycle与这次启动对应
+    /*cycle是周期的意思，对应着一次启动过程，每次启动，nginx都会创建一个新的cycle与这次启动对应
      * 初始化cycle,入参init_cycle为老的cycle，主要存储了log和配置文件相关的信息，还有main函数入参信息
      * ngx_init_cycle函数的主要作用：
      * 1. 解析nginx配置文件
@@ -371,7 +373,7 @@ main(int argc, char *const *argv)
 
         return 0;
     }
-
+    /*nginx -s 信号选项，处理相应的信号选项，根据信号类型，调用kill向自身发送信号*/
     if (ngx_signal) {
         return ngx_signal_process(cycle, ngx_signal);
     }
@@ -388,11 +390,14 @@ main(int argc, char *const *argv)
     }
 
 #if !(NGX_WIN32)
-
+    /*初始化信号，注册信号处理函数
+     * 需要注册的信号及相应的信号处理函数被放在一个类型为ngx_signal_t的数组signals中。
+     * 数组定义在src/os/unix/ngx_process.c中。ngx_signal_t结构类型定义了信号值，信号名字，信号对应动作名以及信号处理函数。
+     * */
     if (ngx_init_signals(cycle->log) != NGX_OK) {
         return 1;
     }
-
+    /*设置为daemon进程*/
     if (!ngx_inherited && ccf->daemon) {
         if (ngx_daemon(cycle->log) != NGX_OK) {
             return 1;
@@ -406,13 +411,14 @@ main(int argc, char *const *argv)
     }
 
 #endif
-    /*如果配置文件nginx.conf里面没有配置 pid  logs/nginx.pid;
+    /* 把进程id记入到文件中
+     * 如果配置文件nginx.conf里面没有配置 pid  logs/nginx.pid;
      * 则在core模块初始化配置ngx_core_module_init_conf时设置ccf->pid为默认路径
      * "/usr/local/nginx/nginx.pid"*/
     if (ngx_create_pidfile(&ccf->pid, cycle->log) != NGX_OK) {
         return 1;
     }
-    /*将标准错误复制为log 文件句柄,
+    /*调用dup2将标准错误复制为log 文件句柄,
      * 即后续往标准错误里面写入的东西，都会体现在log文件句柄中
      * fd = ngx_log_get_file_log(cycle->log)->file->fd*/
     if (ngx_log_redirect_stderr(cycle) != NGX_OK) {
@@ -428,6 +434,8 @@ main(int argc, char *const *argv)
 
     ngx_use_stderr = 0;
     ngx_log_stderr(0,"ngx_process = %d",ngx_process);
+    /*Nginx分为Single和Master两种进程模型，Single模型即为单进程方式工作，具有较差的容错能力，不适合生产之用。
+     * Master模型即为一个master进程+N个worker进程的工作方式。*/
     if (ngx_process == NGX_PROCESS_SINGLE) {
         ngx_single_process_cycle(cycle);
 
@@ -851,7 +859,7 @@ ngx_save_argv(ngx_cycle_t *cycle, int argc, char *const *argv)
 
 #endif
 
-    ngx_os_environ = environ;
+    ngx_os_environ = environ;/*存放环境变量指针*/
 
     return NGX_OK;
 }
@@ -862,7 +870,7 @@ ngx_process_options(ngx_cycle_t *cycle)
 {
     u_char  *p;
     size_t   len;
-
+    /*ngx_prefix 为入参选项-p 所带的参数值,如果有-p选项，则用-p选项，如果没有则读取configure --prefix 带的路径宏NGX_PREFIX*/
     if (ngx_prefix) {
         ngx_log_stderr(0,"ngx_prefix=%s",ngx_prefix);
         len = ngx_strlen(ngx_prefix);
@@ -888,13 +896,14 @@ ngx_process_options(ngx_cycle_t *cycle)
         ngx_log_stderr(0,"NO ngx_prefix");
         /*NGX_PREFIX为configure --prefix= 的路径,如果没有设置默认为/usr/local/nginx/*/
 #ifndef NGX_PREFIX
+/*即没有nginx -p选项，又没有configure --prefix路径，则直接用当前路径作为前缀路径*/
         ngx_log_stderr(0,"NGX_MAX_PATH=%s",NGX_MAX_PATH);
 
         p = ngx_pnalloc(cycle->pool, NGX_MAX_PATH);
         if (p == NULL) {
             return NGX_ERROR;
         }
-
+        /*获取当前的路径*/
         if (ngx_getcwd(p, NGX_MAX_PATH) == 0) {
             ngx_log_stderr(ngx_errno, "[emerg]: " ngx_getcwd_n " failed");
             return NGX_ERROR;
@@ -910,7 +919,9 @@ ngx_process_options(ngx_cycle_t *cycle)
         cycle->prefix.data = p;
 
 #else
-
+/*如果设置了NGX_CONF_PREFIX宏，则conf_prefix为该宏的值,configure --help中貌似没有对应的选项
+ * 没有设置NGX_CONF_PREFIX宏的话，将conf_prefix设置为NGX_PREFIX
+ * prefx为NGX_PREFIX*/
 #ifdef NGX_CONF_PREFIX
         ngx_str_set(&cycle->conf_prefix, NGX_CONF_PREFIX);
 #else
@@ -920,21 +931,24 @@ ngx_process_options(ngx_cycle_t *cycle)
 
 #endif
     }
-
+    /*nginx -c conf file 赋值给ngx_conf_file*/
     if (ngx_conf_file) {
  //       ngx_log_stderr(0,"ngx_conf_file=%s",ngx_conf_file);
         cycle->conf_file.len = ngx_strlen(ngx_conf_file);
         cycle->conf_file.data = ngx_conf_file;
 
     } else {
+        /*没有nginx -c conf_file的话，将conf_file设置为./configure --conf-path=指定的路径*/
         ngx_log_stderr(0,"NGX_CONF_PATH=%s",NGX_CONF_PATH);
         ngx_str_set(&cycle->conf_file, NGX_CONF_PATH);
     }
-
+    /*第三个入参为0，表示conf文件的前缀取得是cycle->prefix,而不是cycle->conf_prefix
+     * 获取配置文件的绝对路径，如果本身已经是绝对路径了，就不要加前缀
+     * 如果本身不是绝对路径，还需要加前缀*/
     if (ngx_conf_full_name(cycle, &cycle->conf_file, 0) != NGX_OK) {
         return NGX_ERROR;
     }
-
+    /*再次通过完整配置路径中的/来获取conf_prefix*/
     for (p = cycle->conf_file.data + cycle->conf_file.len - 1;
          p > cycle->conf_file.data;
          p--)
@@ -945,13 +959,14 @@ ngx_process_options(ngx_cycle_t *cycle)
             break;
         }
     }
-
+    /*nginx -g 后面的参数值*/
     if (ngx_conf_params) {
         ngx_log_stderr(0,"ngx_conf_params=%s",ngx_conf_params);
         cycle->conf_param.len = ngx_strlen(ngx_conf_params);
         cycle->conf_param.data = ngx_conf_params;
     }
     ngx_log_stderr(0,"ngx_test_config=%d,conf_prefix=%s,prefix=%s",ngx_test_config,cycle->conf_prefix.data,cycle->prefix.data);
+    /*nginx -t 决定ngx_test_config是否为1*/
     if (ngx_test_config) {
         cycle->log->log_level = NGX_LOG_INFO;
     }

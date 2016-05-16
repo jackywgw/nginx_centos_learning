@@ -927,7 +927,7 @@ ngx_create_pidfile(ngx_str_t *name, ngx_log_t *log)
     ngx_uint_t  create;
     ngx_file_t  file;
     u_char      pid[NGX_INT64_LEN + 2];
-
+    /*不是master进程时，就不创建这样的一个pid文件*/
     if (ngx_process > NGX_PROCESS_MASTER) {
         return NGX_OK;
     }

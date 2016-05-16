@@ -23,7 +23,7 @@ ngx_get_full_name(ngx_pool_t *pool, ngx_str_t *prefix, ngx_str_t *name)
     size_t      len;
     u_char     *p, *n;
     ngx_int_t   rc;
-
+    /*linux下检查第一个字符是不是/，如果是/，返回NGX_OK，表示已经是绝对路径*/
     rc = ngx_test_full_name(name);
 
     if (rc == NGX_OK) {
@@ -44,7 +44,7 @@ ngx_get_full_name(ngx_pool_t *pool, ngx_str_t *prefix, ngx_str_t *name)
     if (n == NULL) {
         return NGX_ERROR;
     }
-
+    /*ngx_cpymem === memcpy + len*/
     p = ngx_cpymem(n, prefix->data, len);
     ngx_cpystrn(p, name->data, name->len + 1);
 
