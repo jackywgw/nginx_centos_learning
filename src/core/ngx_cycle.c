@@ -54,7 +54,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     ngx_core_conf_t     *ccf, *old_ccf;
     ngx_core_module_t   *module;
     char                 hostname[NGX_MAXHOSTNAMELEN];
-
+    /*linux下通过函数strftime来更新localtime函数获取的时区 /etc/localtime */
     ngx_timezone_update();
 
     /* force localtime update with a new timezone */
@@ -66,7 +66,8 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
 
     log = old_cycle->log;
-
+    /*首先创建了一个内存池，然后在这个内存池上为cycle变量分配一块存储空间。
+     * 后续所有的初始化工作都是为填写这个cycle变量的各个成员字段*/
     pool = ngx_create_pool(NGX_CYCLE_POOL_SIZE, log);
     if (pool == NULL) {
         return NULL;
@@ -82,7 +83,8 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     cycle->pool = pool;
     cycle->log = log;
     cycle->old_cycle = old_cycle;
-    /*将old_cycle中的配置文件信息赋值到新的cycle中，old_cycle中的这些参数在ngx_process_options中初始化*/
+    /*将old_cycle中的配置文件信息/前缀信息/配置文件前缀等赋值到新的cycle中，
+     * old_cycle中的这些参数在ngx_process_options中初始化*/
     cycle->conf_prefix.len = old_cycle->conf_prefix.len;
     cycle->conf_prefix.data = ngx_pstrdup(pool, &old_cycle->conf_prefix);
     if (cycle->conf_prefix.data == NULL) {
@@ -141,7 +143,8 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     } else {
         n = 20;
     }
-
+    /*Nginx使用了链表来维护需要打开的文件以及共享内存，也就是每个打开的文件都会放到cycle中的open_files链表中，
+     * 每个共享内存段都会放到shared_memory链表中。此处仅仅是完成这两个链表空间的初始化，为后面存放相应的对象做好准备。*/
     ngx_log_error(NGX_LOG_DEBUG,log,0,"open_files.part.nelts=%d,n=%d",old_cycle->open_files.part.nelts,n);
     if (ngx_list_init(&cycle->open_files, pool, n, sizeof(ngx_open_file_t))
         != NGX_OK)
@@ -169,7 +172,8 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         ngx_destroy_pool(pool);
         return NULL;
     }
-
+    /*cycle中的listening字段是一个数组，在这里完成此数组的初始化，为该数组分配起n个存储ngx_listening_t元素的单元。
+     * 这个数组将用于存储监听套接字。*/
     n = old_cycle->listening.nelts ? old_cycle->listening.nelts : 10;
 
     ngx_log_error(NGX_LOG_DEBUG,log,0,"listenting.nelts=%d,n=%d",old_cycle->listening.nelts,n);
@@ -184,18 +188,19 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     cycle->listening.nalloc = n;
     cycle->listening.pool = pool;
 
-
+    /*初始化reusable_connections_queue*/
     ngx_queue_init(&cycle->reusable_connections_queue);
 
 
     ngx_log_error(NGX_LOG_DEBUG,log,0,"%s,%d------------------cycle->listening.nelts=%d",__FUNCTION__,__LINE__,cycle->listening.nelts);
+    /*申请所有模块大小的配置数据指针*/
     cycle->conf_ctx = ngx_pcalloc(pool, ngx_max_module * sizeof(void *));
     if (cycle->conf_ctx == NULL) {
         ngx_destroy_pool(pool);
         return NULL;
     }
-
-
+    /*获取主机名称
+     * 可以看出gethostname取的值是hostname命令中显示的值*/
     if (gethostname(hostname, NGX_MAXHOSTNAMELEN) == -1) {
         ngx_log_error(NGX_LOG_EMERG, log, ngx_errno, "gethostname() failed");
         ngx_destroy_pool(pool);
@@ -203,8 +208,9 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     }
 
     /* on Linux gethostname() silently truncates name that does not fit */
-
+    /*截断超长的hostname*/
     hostname[NGX_MAXHOSTNAMELEN - 1] = '\0';
+    /*将hostname信息存入到cycle->hostname结构中*/
     cycle->hostname.len = ngx_strlen(hostname);
 
     cycle->hostname.data = ngx_pnalloc(pool, cycle->hostname.len);
@@ -215,7 +221,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     ngx_strlow(cycle->hostname.data, (u_char *) hostname, cycle->hostname.len);
     ngx_log_error(NGX_LOG_DEBUG,log,0,"hostname=%s",hostname);
-    /*初始化core模块的配置创建函数,并将配置指针放入到配置上下文conf_ctx中*/
+    /*调用create_conf函数为core模块的配置指针分配内存,并将配置指针放入到配置上下文conf_ctx中，这个是一级指针*/
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->type != NGX_CORE_MODULE) {
             continue;
@@ -245,6 +251,10 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     /*初始化conf结构*/
     ngx_memzero(&conf, sizeof(ngx_conf_t));
     /* STUB: init array ? */
+    /*存放配置文件中的一行中的关键字，如：
+     * worker_processes  1;
+     * args的第一个数组元素就是 worker_process
+     * 第二个数组元素就是1*/
     conf.args = ngx_array_create(pool, 10, sizeof(ngx_str_t));
     if (conf.args == NULL) {
         ngx_destroy_pool(pool);
