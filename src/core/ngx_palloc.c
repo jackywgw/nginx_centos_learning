@@ -17,8 +17,12 @@ ngx_pool_t *
 ngx_create_pool(size_t size, ngx_log_t *log)
 {
     ngx_pool_t  *p;
-
-    p = ngx_memalign(NGX_POOL_ALIGNMENT, size, log);/*一般32bit系统是8字节对齐，使用memalign指定第一个参数的倍数的size*/
+    /*在GNU系统中，malloc或realloc返回的内存块地址都是8的倍数（如果是64位系统，则为16的倍数）。
+     * 如果你需要更大的粒度，请使用memalign或valloc。这些函数在头文件“stdlib.h”中声明。
+     * 函数memalign将分配一个由size指定大小，地址是boundary的倍数的内存块。
+     * 参数boundary必须是2的幂！函数memalign可以分配较大的内存块，并且可以为返回的地址指定粒度。
+     * */
+    p = ngx_memalign(NGX_POOL_ALIGNMENT, size, log);/*一般32bit系统是8字节对齐，使用memalign指定第一个参数的倍数作为地址返回，大小为size*/
     if (p == NULL) {
         return NULL;
     }

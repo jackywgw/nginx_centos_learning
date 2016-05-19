@@ -293,7 +293,7 @@ main(int argc, char *const *argv)
 
     ngx_pid = ngx_getpid();/*获取当前进程id,放入全局变量ngx_pid中*/
     /*将ngx_log.c里面的静态变量ngx_log的地址返回给局部log变量*/
-    log = ngx_log_init(ngx_prefix);/*初始化日志文件*/
+    log = ngx_log_init(ngx_prefix);/*初始化日志文件,确定log文件路径，打开文件，存储文件句柄*/
     if (log == NULL) {
         return 1;
     }

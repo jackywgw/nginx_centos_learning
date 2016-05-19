@@ -127,10 +127,10 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
                                filename->data);
             return NGX_CONF_ERROR;
         }
-
+        /*暂时记录conf_file*/
         prev = cf->conf_file;
 
-        cf->conf_file = &conf_file;
+        cf->conf_file = &conf_file;/*将conf_file指向函数内部变量conf_file的地址*/
         /*将配置文件的文件信息stat数据存入conf_file->file.info中*/
         if (ngx_fd_info(fd, &cf->conf_file->file.info) == NGX_FILE_ERROR) {
             ngx_log_error(NGX_LOG_EMERG, cf->log, ngx_errno,
@@ -155,14 +155,14 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
         cf->conf_file->file.offset = 0;
         cf->conf_file->file.log = cf->log;
         cf->conf_file->line = 1;//起始行数为1
-
+        /*如果入参filename存在，则type类型为parse_file*/
         type = parse_file;
 
-    } else if (cf->conf_file->file.fd != NGX_INVALID_FILE) {
+    } else if (cf->conf_file->file.fd != NGX_INVALID_FILE) {/*如果filename不存在，并且配置文件句柄不为-1,则type类型为parse_block*/
 
         type = parse_block;
 
-    } else {
+    } else {/*其它情况下type为parse_param*/
         type = parse_param;
     }
 
@@ -179,11 +179,11 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
          *    NGX_CONF_BLOCK_DONE   the "}" was found
          *    NGX_CONF_FILE_DONE    the configuration file is done
          */
-
+        /*error*/
         if (rc == NGX_ERROR) {
             goto done;
         }
-
+        /*the "}" was found*/
         if (rc == NGX_CONF_BLOCK_DONE) {
 
             if (type != parse_block) {
@@ -193,7 +193,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
 
             goto done;
         }
-
+        /*the configure file is done*/
         if (rc == NGX_CONF_FILE_DONE) {
 
             if (type == parse_block) {
@@ -204,7 +204,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
 
             goto done;
         }
-
+        /*the token terminated by "{" was found*/
         if (rc == NGX_CONF_BLOCK_START) {
 
             if (type == parse_param) {
@@ -214,10 +214,10 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
                 goto failed;
             }
         }
-
-        /* rc == NGX_OK || rc == NGX_CONF_BLOCK_START */
+        
+        /*只有这两种情况会走到此处 rc == NGX_OK || rc == NGX_CONF_BLOCK_START */
         /*指令解析有两种方式，其一是使用nginx内建的指令解析机制，其二是使用第三方自定义指令解析机制。*/
-        /*1. 使用第三方自定义指令解析机制*/
+        /*1. 使用第三方自定义指令解析机制,如http模块，在初始化cf结构的时候会指定，如果没有指定则执行内建的指令解析机制*/
         if (cf->handler) {
             ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0,"cf->handler is not null");
             /*
@@ -257,7 +257,7 @@ failed:
     rc = NGX_ERROR;
 
 done:
-
+    /*关闭文件句柄，还原conf_file值*/
     if (filename) {
         if (cf->conf_file->buffer->start) {
             ngx_free(cf->conf_file->buffer->start);
@@ -495,10 +495,11 @@ ngx_conf_read_token(ngx_conf_t *cf)
     file_size = ngx_file_size(&cf->conf_file->file.info);
     ngx_conf_log_error(NGX_LOG_DEBUG,cf,0,"file_size=%lu,start_line=%uz",file_size,start_line);
     for ( ;; ) {
-        /*第一次，b->pos = b->last,后续b->last指向读取文件的结尾，
-         * 即如果当前读取的位置b->pos超过或者等于上一次读取的末尾b->last，则需要重新读取文件数据*/
+        /*第一次，b->pos = b->last,后续b->last指向读取buffer的结尾，
+         * 从第2次循环开始，如果为真，表示前一次读取的buffer已经全部解析完毕，需要进入判断一下是否文件已经读完，或者没有读完的话，继续读取
+         * 第2次以后if为真的情况是，文件的大小大于buffer的长度(4096)，此时需要多次读取*/
         if (b->pos >= b->last) {
-            /*如果偏移量大于文件大小，则出错*/
+            /*如果偏移量大于文件大小,说明文件已读取完毕，返回NGX_CONF_FILE_DONE*/
             if (cf->conf_file->file.offset >= file_size) {
 
                 if (cf->args->nelts > 0 || !last_space) {
@@ -515,12 +516,12 @@ ngx_conf_read_token(ngx_conf_t *cf)
                                   "expecting \";\" or \"}\"");
                     return NGX_ERROR;
                 }
-
+                ngx_conf_log_error(NGX_LOG_DEBUG,cf,0,"start =%d,pos=%d",start,b->pos);
                 return NGX_CONF_FILE_DONE;
             }
             /*这个两个值在重新执行for循环的情况下应该相等，因为前面刚刚把b->pos赋值给了start*/
-            len = b->pos - start;
-            /*如果这个长度超过了最大文件buffer,NGX_CONF_BUFFER，出错返回*/
+            len = b->pos - start; /*len表示还有多少已扫描但是没有被解析*/
+            /*如果这个长度超过了最大文件buffer,NGX_CONF_BUFFER(4096)，出错返回*/
             if (len == NGX_CONF_BUFFER) {
                 cf->conf_file->line = start_line;
 
@@ -548,11 +549,11 @@ ngx_conf_read_token(ngx_conf_t *cf)
             }
 
             size = (ssize_t) (file_size - cf->conf_file->file.offset);
-
+            /*即文件大小大于分配的buffer长度，size取为buffer长度*/
             if (size > b->end - (b->start + len)) {
                 size = b->end - (b->start + len);
             }
-            /*读取指定大小的文件数据到buf中，起始地址为b->start + len*/
+            /*读取size大小的文件数据到buf中，起始地址为b->start + len,修改文件偏移量*/
             n = ngx_read_file(&cf->conf_file->file, b->start + len, size,
                               cf->conf_file->file.offset);
 
@@ -588,12 +589,14 @@ ngx_conf_read_token(ngx_conf_t *cf)
         if (sharp_comment) {
             continue;
         }
-        /*前面有反斜杠转义字符\*/
+        /*前面有反斜杠转义字符\,说明这个字符是一个转义字符，忽略\后面的字符*/
         if (quoted) {
             quoted = 0;
             continue;
         }
-        /*单引号或者双引号结束后，需要有分隔符*/
+        /*need_space默认为0，单引号或者双引号结束后，需要有以下分隔符：
+         * 空格，制表符，回车，换行，分号，左大括号，右小括号
+         * 遇到其它都是错误的，返回error*/
         if (need_space) {
             /*如果遇到空格，制表符，回车，换行，则将need_space清空，last_space置1*/
             if (ch == ' ' || ch == '\t' || ch == CR || ch == LF) {
@@ -605,7 +608,7 @@ ngx_conf_read_token(ngx_conf_t *cf)
             if (ch == ';') {
                 return NGX_OK;
             }
-            /*遇到{表示新的block的开始*/
+            /*遇到'{'表示新的block的开始*/
             if (ch == '{') {
                 return NGX_CONF_BLOCK_START;
             }
@@ -620,14 +623,14 @@ ngx_conf_read_token(ngx_conf_t *cf)
                  return NGX_ERROR;
             }
         }
-        /*last_space表示上一个字符为字符串分隔符*/
+        /*last_space初始化为1，last_space表示上一个字符为字符串分隔符,需要重新计算start,以表示新的token的起始地址*/
         if (last_space) {
-            /*遇到空格，制表符，回车，换行等字符，则直接跳过下面的处理*/
+            /*遇到空格，制表符，回车，换行等字符，则无需处理*/
             if (ch == ' ' || ch == '\t' || ch == CR || ch == LF) {
                 continue;
             }
 
-            start = b->pos - 1;
+            start = b->pos - 1;/*更新start值，作为新的token(关键字)的起始地址*/
             start_line = cf->conf_file->line;
 
             switch (ch) {
@@ -719,7 +722,11 @@ ngx_conf_read_token(ngx_conf_t *cf)
             }
             //正常情况下，遇到空格或分号结束时，设置了last_space=1,found=1
             if (found) {
-                /*args是初始化为10个ngx_str_t大小的动态数组，在ngx_init_cycle中初始化*/
+                /*args是初始化为10个ngx_str_t大小的动态数组，在ngx_init_cycle中初始化
+                 * 存放配置文件中的一行中的关键字，如：
+                 * worker_processes  1;
+                 * args的第一个数组元素就是 worker_process
+                 * 第二个数组元素就是1*/
                 word = ngx_array_push(cf->args);//找到数组可用的位置
                 if (word == NULL) {
                     return NGX_ERROR;
