@@ -226,7 +226,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         if (ngx_modules[i]->type != NGX_CORE_MODULE) {
             continue;
         }
-
+        /*获取模块设备指针*/
         module = ngx_modules[i]->ctx;
 
         if (module->create_conf) {
@@ -286,6 +286,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         return NULL;
     }
     ngx_log_error(NGX_LOG_DEBUG,log,0,"beginning ngx_conf_parse------------------------");
+    /*解析配置文件，并将结果关键字存放到conf->args数组中*/
     if (ngx_conf_parse(&conf, &cycle->conf_file) != NGX_CONF_OK) {
         environ = senv;
         ngx_destroy_cycle_pools(&conf);
@@ -303,7 +304,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         if (ngx_modules[i]->type != NGX_CORE_MODULE) {
             continue;
         }
-
+        /*nginx模块的上下文指针*/
         module = ngx_modules[i]->ctx;
 
         if (module->init_conf) {

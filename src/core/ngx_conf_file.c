@@ -326,7 +326,9 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             /*default type is zeros now*/
             ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0,"cmd->type=0x%xi,cf->cmd_type=0x%xi",cmd->type,cf->cmd_type);
             //ngx_log_stderr(0,"cmd->type=0x%xi,cf->cmd_type=0x%xi",(unsigned int)cmd->type,(unsigned int)cf->cmd_type);
-            /*指令的Context类型必须当前解析Context类型相符*/
+            /*指令的Context类型必须有当前解析的Context类型，设置对应的标记位
+             * 这里的cf->cmd_type一开始在ngx_init_cycle中设置为conf.cmd_type = NGX_MAIN_CONF;
+             * 在遇到其它类型的时候会在某个command处理函数中重新设置cmd_type*/
             if (!(cmd->type & cf->cmd_type)) {
                 continue;
             }
@@ -346,7 +348,9 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             }
 
             /* is the directive's argument count right ? */
-            /*指令参数个数必须正确。注意指令参数有最大值NGX_CONF_MAX_ARGS，目前值为8*/
+            
+            /*指令参数个数必须正确。注意指令参数有最大值NGX_CONF_MAX_ARGS，目前值为8
+             * 在cmd_type中会指定指令参数的个数，NGX_CONF_FLAG关键字后面刚好跟1个参数，NGX_CONF_1MORE 表示至少2个，NGX_CONF_2MORE：至少3个*/
             if (!(cmd->type & NGX_CONF_ANY)) {
 
                 if (cmd->type & NGX_CONF_FLAG) {
@@ -376,7 +380,14 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                     goto invalid;
                 }
             }
-
+/*这里举一个例子用于下面的解析NGX_DIRECT_CONF 和 NGX_MAIN_CONF
+ * 假设分配2个void*大小的数组指针，void ****ctx = malloc(sizeof(void*)*2);
+ *1. 假设a=1，并且ctx[0] = &a;这就类似于NGX_DIRECT_CONF的情况：
+ *   即通过conf=ctx[0]就可以取到a的地址，(void**)仅仅是为了强制转换，也可以不用
+ *2. NGX_MAIN_CONF的情况，ctx[1]目前没有被赋予地址，而是在后续的set函数里面设置，
+ *   那么先设置conf=&ctx[1],并且将conf传入后续的set函数，然后在set函数里面设置，同样达到
+ *   给ctx赋值的目的。同样(void**)仅仅是为了强制转换
+ * */
             /* set up the directive's configuration context */
             /*获取指令工作的conf指针*/
             conf = NULL;
@@ -384,7 +395,8 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             /*NGX_DIRECT_CONF常量单纯用来指定配置存储区的寻址方法，只用于core模块*/
             if (cmd->type & NGX_DIRECT_CONF) {
                 ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0,"NGX_DIRECT_CONF");
-                conf = ((void **) cf->ctx)[ngx_modules[i]->index];
+                /*这里可以直接取数组元素，是因为前面已经调用过了conf_create函数,这里的内存已经分配好了*/
+                conf = ((void **) cf->ctx)[ngx_modules[i]->index]; /*这里的(void **)只是做一个强制类型转换，实际上只要cf->ctx[ngx_modules[i]->index];就可以了*/
 
             } else if (cmd->type & NGX_MAIN_CONF) {
                 /*NGX_MAIN_CONF常量有两重含义，
@@ -400,7 +412,7 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                  * NGX_MAIN_CONF|NGX_CONF_BLOCK|...
                  * 后面分析ngx_http_block()函数时，再具体分析为什么需要NGX_MAIN_CONF这种配置寻址方式。*/
                 ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0,"NGX_MAIN_CONF");
-                conf = &(((void **) cf->ctx)[ngx_modules[i]->index]);
+                conf = &(((void **) cf->ctx)[ngx_modules[i]->index]);/*在这里取地址，是因为要在set函数里面在对ctx进行内存的分配和设置*/
 
             } else if (cf->ctx) {
                 ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0,"cf->ctx is not null");
